@@ -1,57 +1,225 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ذاكرة الفراكتل</title>
-
 <style>
-body{
-background:#0b1220;
-color:white;
-font-family:Arial;
-padding:20px;
-text-align:center;
-}
-.box{
-background:#111827;
-padding:20px;
-border-radius:12px;
-max-width:600px;
-margin:auto;
-}
-button{
-background:#2563eb;
-color:white;
-border:none;
-padding:12px 20px;
-border-radius:8px;
-cursor:pointer;
-}
+:root{--bg:#07101d;--card:#101a2c;--line:#24344f;--txt:#f3f6fb;--muted:#9aa8bd;--blue:#2f6df6;--gold:#f5c542;--green:#35d07f;--red:#ff5f6d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+header{padding:14px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#091320;z-index:2}
+h1{font-size:22px;margin:0;color:var(--gold)}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+select,input,button{height:42px;border-radius:10px;border:1px solid var(--line);background:#0d1728;color:var(--txt);font-size:15px;padding:0 10px}
+button{background:var(--blue);border:0;font-weight:700}
+.wrap{padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:12px}
+#chart{width:100%;height:420px;background:#050b13;border-radius:14px;border:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:#0c1627;border:1px solid var(--line);border-radius:12px;padding:10px}
+.stat b{display:block;font-size:20px;margin-top:5px}
+small,.muted{color:var(--muted)}
+.good{color:var(--green)}.bad{color:var(--red)}.gold{color:var(--gold)}
+.log{white-space:pre-wrap;line-height:1.6;font-size:13px;color:#dce6f7}
+canvas{display:block}
 </style>
 </head>
-
 <body>
+<header>
+  <h1>ذاكرة الفراكتل</h1>
+  <div class="controls">
+    <select id="symbol">
+      <option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option><option>BNBUSDT</option><option>XRPUSDT</option>
+    </select>
+    <select id="tf">
+      <option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="4h">4h</option>
+    </select>
+    <input id="limit" type="number" value="1000" min="300" max="1500" step="100" />
+    <input id="sensitivity" type="number" value="2" min="1" max="5" step="1" />
+    <button onclick="run()">احسب الذاكرة</button>
+    <button onclick="autoRun()">تحديث تلقائي</button>
+  </div>
+</header>
 
-<div class="box">
-<h1>ذاكرة الفراكتل</h1>
+<div class="wrap">
+  <div class="card"><canvas id="chart"></canvas></div>
 
-<p>نسخة أولية للمشروع</p>
+  <div class="card grid">
+    <div class="stat"><small>نسبة التشابه</small><b id="sim">--</b></div>
+    <div class="stat"><small>الاتجاه بعد النموذج</small><b id="dir">--</b></div>
+    <div class="stat"><small>النماذج المطابقة</small><b id="matches">--</b></div>
+    <div class="stat"><small>قوة الذاكرة</small><b id="grade">--</b></div>
+  </div>
 
-<button onclick="runCalc()">
-احسب
-</button>
-
-<p id="result"></p>
-
+  <div class="card">
+    <b class="gold">تفسير النموذج</b>
+    <div id="explain" class="log">اضغط احسب الذاكرة.</div>
+  </div>
 </div>
 
 <script>
-function runCalc(){
-document.getElementById("result").innerHTML =
-"تم تشغيل النموذج بنجاح";
-}
-</script>
+let timer=null, lastData=[], result=null;
 
+async function fetchKlines(symbol, interval, limit){
+  const url=`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const r=await fetch(url);
+  if(!r.ok) throw new Error("فشل جلب بيانات Binance");
+  const raw=await r.json();
+  return raw.map(x=>({t:x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));
+}
+
+function pivots(data, k){
+  const out=[];
+  for(let i=k;i<data.length-k;i++){
+    let ph=true, pl=true;
+    for(let j=1;j<=k;j++){
+      if(data[i].h<=data[i-j].h || data[i].h<=data[i+j].h) ph=false;
+      if(data[i].l>=data[i-j].l || data[i].l>=data[i+j].l) pl=false;
+    }
+    if(ph) out.push({i,type:"H",p:data[i].h,t:data[i].t});
+    if(pl) out.push({i,type:"L",p:data[i].l,t:data[i].t});
+  }
+  out.sort((a,b)=>a.i-b.i);
+  const clean=[];
+  for(const p of out){
+    const last=clean[clean.length-1];
+    if(!last){clean.push(p);continue}
+    if(last.type!==p.type){clean.push(p);continue}
+    if(p.type==="H" && p.p>last.p) clean[clean.length-1]=p;
+    if(p.type==="L" && p.p<last.p) clean[clean.length-1]=p;
+  }
+  return clean;
+}
+
+function signature(seq){
+  const prices=seq.map(x=>x.p), times=seq.map(x=>x.i);
+  const base=Math.max(1e-9, Math.abs(prices[1]-prices[0]));
+  const arr=[];
+  for(let i=1;i<prices.length;i++){
+    arr.push((prices[i]-prices[i-1])/base);
+    arr.push((times[i]-times[i-1]) / Math.max(1,times[1]-times[0]));
+  }
+  return arr;
+}
+
+function distance(a,b){
+  let s=0;
+  for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; }
+  return Math.sqrt(s/a.length);
+}
+
+function analyze(data){
+  const k=+document.getElementById("sensitivity").value;
+  const pv=pivots(data,k);
+  const N=6;
+  if(pv.length<N+20) throw new Error("الفراكتلات قليلة. زود عدد الشموع أو خفف الحساسية.");
+  const current=pv.slice(-N);
+  const curSig=signature(current);
+  const matches=[];
+  for(let start=0; start<=pv.length-N-8; start++){
+    const seq=pv.slice(start,start+N);
+    if(seq.map(x=>x.type).join("")!==current.map(x=>x.type).join("")) continue;
+    const sig=signature(seq);
+    const dist=distance(curSig,sig);
+    const sim=Math.max(0, 100-(dist*32));
+    const after=pv[start+N+3] || pv[start+N+1];
+    const end=seq[seq.length-1];
+    if(!after) continue;
+    const move=((after.p-end.p)/end.p)*100;
+    matches.push({start,seq,sim,move,after});
+  }
+  matches.sort((a,b)=>b.sim-a.sim);
+  const top=matches.slice(0,20).filter(x=>x.sim>=55);
+  const best=matches[0];
+  const up=top.filter(x=>x.move>0).length;
+  const down=top.filter(x=>x.move<0).length;
+  const avg=top.reduce((s,x)=>s+x.move,0)/(top.length||1);
+  return {pv,current,best,top,up,down,avg};
+}
+
+function draw(data, res){
+  const canvas=document.getElementById("chart");
+  const dpr=window.devicePixelRatio||1;
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=rect.width*dpr; canvas.height=rect.height*dpr;
+  const ctx=canvas.getContext("2d"); ctx.scale(dpr,dpr);
+  const W=rect.width,H=rect.height,pad=35;
+  ctx.clearRect(0,0,W,H);
+  const hi=Math.max(...data.map(x=>x.h)), lo=Math.min(...data.map(x=>x.l));
+  const x=i=>pad+(i/(data.length-1))*(W-pad*2);
+  const y=p=>pad+(hi-p)/(hi-lo)*(H-pad*2);
+
+  ctx.strokeStyle="#1d2b44"; ctx.lineWidth=1;
+  for(let n=0;n<5;n++){let yy=pad+n*(H-pad*2)/4;ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);ctx.stroke();}
+  ctx.strokeStyle="#dce6f7"; ctx.lineWidth=1.4; ctx.beginPath();
+  data.forEach((b,i)=>{const xx=x(i), yy=y(b.c); if(i===0)ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy);}); ctx.stroke();
+
+  const seq=res.current;
+  const s=seq[0].i, e=seq[seq.length-1].i;
+  ctx.fillStyle="rgba(245,197,66,.12)"; ctx.fillRect(x(s),pad,x(e)-x(s),H-pad*2);
+  ctx.strokeStyle="#f5c542"; ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(x(s),pad);ctx.lineTo(x(s),H-pad);ctx.moveTo(x(e),pad);ctx.lineTo(x(e),H-pad);ctx.stroke();
+
+  ctx.fillStyle="#f5c542";
+  for(const p of seq){ctx.beginPath();ctx.arc(x(p.i),y(p.p),4,0,Math.PI*2);ctx.fill();}
+  ctx.fillStyle="#fff"; ctx.font="12px Arial"; ctx.fillText("بداية الذاكرة",x(s)+4,pad+16); ctx.fillText("نهاية الذاكرة",x(e)-70,pad+32);
+
+  if(res.best){
+    const last=seq[seq.length-1];
+    const projected=last.p*(1+(res.avg/100));
+    ctx.strokeStyle=res.avg>=0?"#35d07f":"#ff5f6d"; ctx.setLineDash([6,5]); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x(last.i),y(last.p)); ctx.lineTo(W-pad,y(projected)); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+async function run(){
+  document.getElementById("explain").textContent="جاري جلب البيانات وتحليل الذاكرة...";
+  try{
+    const symbol=document.getElementById("symbol").value;
+    const tf=document.getElementById("tf").value;
+    const limit=+document.getElementById("limit").value;
+    lastData=await fetchKlines(symbol,tf,limit);
+    result=analyze(lastData);
+    draw(lastData,result);
+
+    const bestSim=result.best?result.best.sim:0;
+    const dir=result.avg>=0?"صعود محتمل":"هبوط محتمل";
+    const cls=result.avg>=0?"good":"bad";
+    const grade=bestSim>=85?"A+":bestSim>=75?"A":bestSim>=65?"B":bestSim>=55?"C":"ضعيفة";
+
+    document.getElementById("sim").textContent=bestSim.toFixed(1)+"%";
+    document.getElementById("dir").innerHTML=`<span class="${cls}">${dir}</span>`;
+    document.getElementById("matches").textContent=result.top.length;
+    document.getElementById("grade").textContent=grade;
+
+    document.getElementById("explain").textContent =
+`الرمز: ${symbol}
+الفريم: ${tf}
+المنطق: مقارنة شكل السلوك الحالي بذاكرة النماذج السابقة، بدون تثبيت عدد شموع للنموذج.
+
+أفضل تشابه: ${bestSim.toFixed(1)}%
+عدد النماذج المقبولة: ${result.top.length}
+بعد النماذج المشابهة:
+- صعدت: ${result.up}
+- هبطت: ${result.down}
+- متوسط الحركة بعد الذاكرة: ${result.avg.toFixed(2)}%
+
+القاعدة:
+إذا كانت النتيجة A أو A+ ومعها أغلبية اتجاه واضحة، النموذج يستحق المتابعة.
+إذا كانت C أو عدد النماذج قليل، الذاكرة ضعيفة ولا نعتمد عليها.`;
+  }catch(e){
+    document.getElementById("explain").textContent="خطأ: "+e.message;
+  }
+}
+
+function autoRun(){
+  if(timer){clearInterval(timer);timer=null;document.querySelectorAll("button")[1].textContent="تحديث تلقائي";return;}
+  run();
+  timer=setInterval(run,60000);
+  document.querySelectorAll("button")[1].textContent="إيقاف التحديث";
+}
+run();
+</script>
 </body>
 </html>
