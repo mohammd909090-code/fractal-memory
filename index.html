@@ -1,155 +1,251 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>قناص التشارت</title>
 
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      min-height: 100%;
-      background: #0b0f14;
-      color: white;
-      font-family: Arial, sans-serif;
-      overflow-x: hidden;
+
+‏<!doctype html>
+‏<html lang="ar" dir="rtl">
+‏<head>
+‏<meta charset="UTF-8">
+‏<meta name="viewport" content="width=device-width, initial-scale=1.0">
+‏<title>ذاكرة الفراكتل</title>
+
+‏<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+‏<style>
+‏body{margin:0;background:#07101f;color:white;font-family:Arial}
+‏.wrap{max-width:430px;margin:auto;padding:18px}
+‏h1{color:#f6c744;text-align:right}
+‏.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+‏.field{display:flex;flex-direction:column;gap:5px}
+‏label{font-size:13px;color:#9fb0d0}
+‏input,select,button{height:52px;border-radius:12px;border:1px solid #253555;background:#0d1729;color:white;font-size:18px;padding:0 12px}
+‏input,select{direction:ltr;text-align:center}
+‏button{background:#3478f6;border:0;font-weight:bold;direction:rtl}
+‏.card{margin-top:18px;border:1px solid #253555;border-radius:18px;padding:12px;background:#0b1424}
+‏#chart{width:100%;height:500px;border-radius:18px;overflow:hidden;background:#050b13}
+‏.info{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+‏.box{background:#101b30;border:1px solid #26385e;border-radius:12px;padding:10px;text-align:center}
+‏.big{color:#f6c744;font-size:21px;font-weight:bold}
+‏.err{color:#ff6b6b;text-align:center;margin-top:10px;font-size:14px}
+‏</style>
+‏</head>
+
+‏<body>
+‏<div class="wrap">
+‏  <h1>ذاكرة الفراكتل</h1>
+
+‏  <div class="grid">
+
+‏    <div class="field">
+‏      <label>العملة</label>
+‏      <select id="symbol">
+‏        <option value="BTCUSDT">BTCUSDT</option>
+‏        <option value="ETHUSDT" selected>ETHUSDT</option>
+‏        <option value="SOLUSDT">SOLUSDT</option>
+‏        <option value="BNBUSDT">BNBUSDT</option>
+‏        <option value="XRPUSDT">XRPUSDT</option>
+‏      </select>
+‏    </div>
+
+‏    <div class="field">
+‏      <label>الفريم</label>
+‏      <select id="tf">
+‏        <option value="1m">1m</option>
+‏        <option value="5m" selected>5m</option>
+‏        <option value="15m">15m</option>
+‏        <option value="30m">30m</option>
+‏        <option value="1h">1h</option>
+‏        <option value="4h">4h</option>
+‏      </select>
+‏    </div>
+
+‏    <div class="field">
+‏      <label>عدد الشموع</label>
+‏      <input id="candles" value="1000">
+‏    </div>
+
+‏    <div class="field">
+‏      <label>طول النموذج</label>
+‏      <input id="pattern" value="40">
+‏    </div>
+
+‏    <button onclick="loadChart()">احسب الذاكرة</button>
+‏    <button onclick="stopUpdate()">إيقاف التحديث</button>
+‏  </div>
+
+‏  <div class="card">
+‏    <div id="chart"></div>
+‏    <div id="error" class="err"></div>
+
+‏    <div class="info">
+‏      <div class="box">السعر الحالي<br><span id="price" class="big">--</span></div>
+‏      <div class="box">التشابه<br><span id="sim" class="big">--</span></div>
+‏      <div class="box">الاتجاه المتوقع<br><span id="dir" class="big">--</span></div>
+‏      <div class="box">بعد الذاكرة<br><span id="move" class="big">--</span></div>
+‏    </div>
+‏  </div>
+‏</div>
+
+‏<script>
+‏let chart = null;
+‏let candleSeries = null;
+‏let timer = null;
+
+‏function stopUpdate(){
+‏  if(timer){
+‏    clearInterval(timer);
+‏    timer = null;
+  }
+}
+
+‏function normalize(arr){
+‏  const first = arr[0];
+‏  return arr.map(v => ((v - first) / first) * 100);
+}
+
+‏function similarity(a,b){
+‏  let diff = 0;
+‏  for(let i=0;i<a.length;i++){
+‏    diff += Math.abs(a[i]-b[i]);
+  }
+‏  const avg = diff / a.length;
+‏  return Math.max(0, Math.min(100, 100 - avg * 8));
+}
+
+‏function findMemory(data, len){
+‏  const closes = data.map(x => x.close);
+‏  const current = normalize(closes.slice(-len));
+
+‏  let best = {score:-1,index:0};
+
+‏  for(let i=0; i < closes.length - len - 20; i++){
+‏    const past = normalize(closes.slice(i, i+len));
+‏    const score = similarity(current, past);
+
+‏    if(score > best.score){
+‏      best.score = score;
+‏      best.index = i;
+    }
+  }
+
+‏  return best;
+}
+
+‏async function loadChart(){
+‏  stopUpdate();
+‏  document.getElementById("error").textContent = "";
+
+‏  const symbol = document.getElementById("symbol").value;
+‏  const tf = document.getElementById("tf").value;
+‏  const limit = Number(document.getElementById("candles").value) || 1000;
+‏  const len = Number(document.getElementById("pattern").value) || 40;
+
+‏  if(chart){
+‏    chart.remove();
+‏    chart = null;
+  }
+
+‏  const chartBox = document.getElementById("chart");
+
+‏  chart = LightweightCharts.createChart(chartBox, {
+‏    width: chartBox.clientWidth,
+‏    height: 500,
+‏    layout:{
+‏      background:{type:"solid",color:"#050b13"},
+‏      textColor:"#ffffff"
+    },
+‏    grid:{
+‏      vertLines:{color:"#1c2944"},
+‏      horzLines:{color:"#1c2944"}
+    },
+‏    timeScale:{
+‏      rightOffset:8,
+‏      barSpacing:7
+    }
+  });
+
+‏  candleSeries = chart.addCandlestickSeries({
+‏    upColor:"#16a085",
+‏    downColor:"#e74c3c",
+‏    borderUpColor:"#16a085",
+‏    borderDownColor:"#e74c3c",
+‏    wickUpColor:"#16a085",
+‏    wickDownColor:"#e74c3c"
+  });
+
+‏  try{
+‏    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
+‏    const res = await fetch(url);
+‏    const raw = await res.json();
+
+‏    if(!Array.isArray(raw)){
+‏      document.getElementById("error").textContent = "تعذر جلب البيانات. جرّب BTCUSDT أو ETHUSDT.";
+‏      return;
     }
 
-    .container {
-      width: 100vw;
-      max-width: 100vw;
-      padding: 8px;
-      box-sizing: border-box;
-    }
+‏    const data = raw.map(k => ({
+‏      time: Math.floor(k[0]/1000),
+‏      open: Number(k[1]),
+‏      high: Number(k[2]),
+‏      low: Number(k[3]),
+‏      close: Number(k[4])
+    }));
 
-    .top-box {
-      background: #111827;
-      border: 1px solid #243044;
-      border-radius: 12px;
-      padding: 12px;
-      margin-bottom: 10px;
-      box-sizing: border-box;
-    }
+‏    candleSeries.setData(data);
 
-    select, button {
-      width: 100%;
-      padding: 13px;
-      margin-top: 8px;
-      border-radius: 10px;
-      border: none;
-      font-size: 18px;
-      box-sizing: border-box;
-    }
+‏    const best = findMemory(data, len);
+‏    const start = best.index;
+‏    const end = best.index + len - 1;
+‏    const after = Math.min(end + 20, data.length - 1);
 
-    select {
-      background: #1f2937;
-      color: white;
-    }
+‏    const endPrice = data[end].close;
+‏    const afterPrice = data[after].close;
+‏    const move = ((afterPrice - endPrice) / endPrice) * 100;
+‏    const last = data[data.length - 1].close;
 
-    button {
-      background: #2563eb;
-      color: white;
-      font-weight: bold;
-    }
-
-    .chart-box {
-      width: 100%;
-      height: calc(100vh - 190px);
-      min-height: 720px;
-      background: #000;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid #243044;
-      box-sizing: border-box;
-    }
-
-    #tradingview_chart {
-      width: 100%;
-      height: 100%;
-    }
-
-    @media (max-width: 768px) {
-      .container {
-        padding: 4px;
+‏    candleSeries.setMarkers([
+      {
+‏        time:data[start].time,
+‏        position:"belowBar",
+‏        color:"#f6c744",
+‏        shape:"arrowUp",
+‏        text:"بداية الذاكرة"
+      },
+      {
+‏        time:data[end].time,
+‏        position:"aboveBar",
+‏        color:"#f6c744",
+‏        shape:"arrowDown",
+‏        text:"نهاية الذاكرة"
+      },
+      {
+‏        time:data[after].time,
+‏        position: move >= 0 ? "aboveBar" : "belowBar",
+‏        color: move >= 0 ? "#36d399" : "#ff5c7a",
+‏        shape: move >= 0 ? "arrowUp" : "arrowDown",
+‏        text:"بعد الذاكرة"
       }
+    ]);
 
-      .top-box {
-        margin: 4px 4px 8px 4px;
-      }
+‏    document.getElementById("price").textContent = last.toFixed(2);
+‏    document.getElementById("sim").textContent = best.score.toFixed(1) + "%";
+‏    document.getElementById("dir").textContent = move >= 0 ? "صعود" : "هبوط";
+‏    document.getElementById("move").textContent = (move >= 0 ? "+" : "") + move.toFixed(2) + "%";
 
-      .chart-box {
-        width: 100vw;
-        margin-left: -4px;
-        margin-right: -4px;
-        height: calc(100vh - 185px);
-        min-height: 760px;
-        border-radius: 6px;
-      }
-    }
-  </style>
-</head>
+‏    chart.timeScale().fitContent();
 
-<body>
+‏  }catch(e){
+‏    document.getElementById("error").textContent = "فيه مشكلة اتصال بالبيانات. حدث الصفحة أو جرّب لاحقاً.";
+  }
 
-  <div class="container">
+‏  timer = setInterval(loadChart, 60000);
+}
 
-    <div class="top-box">
-      <label>اختر الأصل:</label>
+‏window.addEventListener("resize",()=>{
+‏  if(chart){
+‏    chart.applyOptions({width:document.getElementById("chart").clientWidth});
+  }
+});
 
-      <select id="symbolSelect">
-        <option value="OANDA:XAUUSD">الذهب XAUUSD</option>
-        <option value="BINANCE:BTCUSDT">بتكوين BTCUSDT</option>
-        <option value="NASDAQ:AAPL">Apple</option>
-        <option value="NASDAQ:TSLA">Tesla</option>
-        <option value="NASDAQ:NVDA">Nvidia</option>
-      </select>
-
-      <button onclick="loadChart()">تحديث التشارت</button>
-    </div>
-
-    <div class="chart-box">
-      <div id="tradingview_chart"></div>
-    </div>
-
-  </div>
-
-  <script src="https://s3.tradingview.com/tv.js"></script>
-
-  <script>
-    let chartWidget = null;
-
-    function loadChart() {
-      const symbol = document.getElementById("symbolSelect").value;
-
-      document.getElementById("tradingview_chart").innerHTML = "";
-
-      chartWidget = new TradingView.widget({
-        container_id: "tradingview_chart",
-        width: "100%",
-        height: 760,
-        symbol: symbol,
-        interval: "15",
-        timezone: "Asia/Riyadh",
-        theme: "dark",
-        style: "1",
-        locale: "ar",
-        toolbar_bg: "#0b0f14",
-        enable_publishing: false,
-        allow_symbol_change: true,
-        hide_side_toolbar: false,
-        withdateranges: true,
-        details: true,
-        hotlist: false,
-        calendar: false,
-        studies: []
-      });
-    }
-
-    window.onload = loadChart;
-    window.onresize = loadChart;
-  </script>
-
-</body>
-</html>
+‏loadChart();
+‏</script>
+‏</body>
+‏</html>
