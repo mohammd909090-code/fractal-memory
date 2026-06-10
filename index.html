@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ذاكرة الفراكتل</title>
+
+<style>
+body{
+background:#0b1220;
+color:white;
+font-family:Arial;
+padding:20px;
+text-align:center;
+}
+.box{
+background:#111827;
+padding:20px;
+border-radius:12px;
+max-width:600px;
+margin:auto;
+}
+button{
+background:#2563eb;
+color:white;
+border:none;
+padding:12px 20px;
+border-radius:8px;
+cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+<h1>ذاكرة الفراكتل</h1>
+
+<p>نسخة أولية للمشروع</p>
+
+<button onclick="runCalc()">
+احسب
+</button>
+
+<p id="result"></p>
+
+</div>
+
+<script>
+function runCalc(){
+document.getElementById("result").innerHTML =
+"تم تشغيل النموذج بنجاح";
+}
+</script>
+
+</body>
+</html>
