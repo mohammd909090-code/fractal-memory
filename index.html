@@ -1,150 +1,225 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ذاكرة الفراكتل</title>
+
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+
 <style>
-body{margin:0;background:#07101f;color:#fff;font-family:Arial}
+body{margin:0;background:#07101f;color:white;font-family:Arial}
 .wrap{max-width:430px;margin:auto;padding:18px}
 h1{color:#f6c744;text-align:right}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 input,select,button{height:52px;border-radius:12px;border:1px solid #253555;background:#0d1729;color:white;font-size:18px;padding:0 12px}
 button{background:#3478f6;border:0;font-weight:bold}
 .card{margin-top:18px;border:1px solid #253555;border-radius:18px;padding:12px;background:#0b1424}
-#chart{width:100%;height:470px;background:#050b13;border-radius:18px}
+#chart{width:100%;height:500px;border-radius:18px;overflow:hidden}
 .info{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .box{background:#101b30;border:1px solid #26385e;border-radius:12px;padding:10px;text-align:center}
 .big{color:#f6c744;font-size:22px;font-weight:bold}
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <h1>ذاكرة الفراكتل</h1>
 
   <div class="grid">
-    <select id="tf">
-      <option>1m</option><option>5m</option><option>15m</option><option selected>30m</option><option>1h</option><option>4h</option>
-    </select>
     <input id="symbol" value="ETHUSDT">
-    <input id="matches" value="2" placeholder="عدد التطابقات">
+    <select id="tf">
+      <option value="1m">1m</option>
+      <option value="5m" selected>5m</option>
+      <option value="15m">15m</option>
+      <option value="30m">30m</option>
+      <option value="1h">1h</option>
+      <option value="4h">4h</option>
+    </select>
+
     <input id="candles" value="1000" placeholder="عدد الشموع">
+    <input id="pattern" value="40" placeholder="طول النموذج">
+
+    <button onclick="loadChart()">احسب الذاكرة</button>
     <button onclick="stopUpdate()">إيقاف التحديث</button>
-    <button onclick="draw()">احسب الذاكرة</button>
   </div>
 
   <div class="card">
-    <canvas id="chart"></canvas>
+    <div id="chart"></div>
 
     <div class="info">
-      <div class="box">التشابه<br><span id="sim" class="big">--%</span></div>
+      <div class="box">السعر الحالي<br><span id="price" class="big">--</span></div>
+      <div class="box">التشابه<br><span id="sim" class="big">--</span></div>
       <div class="box">الاتجاه المتوقع<br><span id="dir" class="big">--</span></div>
-      <div class="box">ثقة النموذج<br><span id="rank" class="big">--</span></div>
       <div class="box">بعد الذاكرة<br><span id="move" class="big">--</span></div>
     </div>
   </div>
 </div>
 
 <script>
-let timer=null;
-
-function rand(min,max){return min+Math.random()*(max-min)}
-
-function makeData(n=220){
-  let p=100, arr=[];
-  for(let i=0;i<n;i++){
-    let drift = i<60 ? rand(-.5,.4) : i<120 ? rand(-.3,.2) : i<160 ? rand(-1.7,-.3) : rand(-.2,.9);
-    p += drift;
-    arr.push(p);
-  }
-  return arr;
-}
-
-function draw(){
-  const c=document.getElementById("chart");
-  const ctx=c.getContext("2d");
-  const dpr=window.devicePixelRatio||1;
-  c.width=c.clientWidth*dpr;
-  c.height=c.clientHeight*dpr;
-  ctx.scale(dpr,dpr);
-
-  const w=c.clientWidth,h=c.clientHeight;
-  ctx.clearRect(0,0,w,h);
-
-  const data=makeData();
-  const min=Math.min(...data), max=Math.max(...data);
-  const pad=34;
-  const x=i=>pad+i*(w-pad*2)/(data.length-1);
-  const y=v=>h-pad-(v-min)*(h-pad*2)/(max-min);
-
-  // grid
-  ctx.strokeStyle="#1c2944";
-  ctx.lineWidth=1;
-  for(let i=1;i<5;i++){
-    let yy=pad+i*(h-pad*2)/5;
-    ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(w-pad,yy);ctx.stroke();
-  }
-
-  // memory zone
-  const start=data.length-28;
-  const end=data.length-10;
-  const xs=x(start), xe=x(end);
-
-  ctx.fillStyle="rgba(246,199,68,.16)";
-  ctx.fillRect(xs,pad,xe-xs,h-pad*2);
-
-  ctx.strokeStyle="#f6c744";
-  ctx.lineWidth=3;
-  ctx.beginPath();ctx.moveTo(xs,pad);ctx.lineTo(xs,h-pad);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(xe,pad);ctx.lineTo(xe,h-pad);ctx.stroke();
-
-  ctx.fillStyle="#fff";
-  ctx.font="14px Arial";
-  ctx.fillText("بداية الذاكرة", xs-78, pad+28);
-  ctx.fillText("نهاية الذاكرة", xe-76, pad+58);
-
-  // price line
-  ctx.strokeStyle="#e8eefc";
-  ctx.lineWidth=2;
-  ctx.beginPath();
-  data.forEach((v,i)=>{
-    if(i===0)ctx.moveTo(x(i),y(v));else ctx.lineTo(x(i),y(v));
-  });
-  ctx.stroke();
-
-  // yellow dots
-  ctx.fillStyle="#f6c744";
-  for(let i=start;i<=end;i+=4){
-    ctx.beginPath();
-    ctx.arc(x(i),y(data[i]),5,0,Math.PI*2);
-    ctx.fill();
-  }
-
-  // prediction line
-  const last=data[data.length-1];
-  const pred=last+rand(2,6);
-  ctx.strokeStyle="#36d399";
-  ctx.setLineDash([6,6]);
-  ctx.beginPath();
-  ctx.moveTo(x(data.length-1),y(last));
-  ctx.lineTo(w-pad,y(pred));
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const sim=Math.round(rand(82,94));
-  const mv=(rand(2.1,5.8)).toFixed(2);
-  document.getElementById("sim").textContent=sim+"%";
-  document.getElementById("dir").textContent="صعود";
-  document.getElementById("rank").textContent=sim>=90?"A+":sim>=86?"A":"B";
-  document.getElementById("move").textContent="+"+mv+"%";
-}
+let chart = null;
+let candleSeries = null;
+let timer = null;
+let markers = [];
 
 function stopUpdate(){
-  if(timer){clearInterval(timer);timer=null}
+  if(timer){
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
-draw();
-timer=setInterval(draw,15000);
+function normalize(arr){
+  const first = arr[0];
+  return arr.map(v => ((v - first) / first) * 100);
+}
+
+function similarity(a,b){
+  let diff = 0;
+  for(let i=0;i<a.length;i++){
+    diff += Math.abs(a[i]-b[i]);
+  }
+  const avg = diff / a.length;
+  return Math.max(0, Math.min(100, 100 - avg * 8));
+}
+
+function findMemory(data, len){
+  const closes = data.map(x => x.close);
+  const current = normalize(closes.slice(-len));
+
+  let best = {
+    score: -1,
+    index: 0
+  };
+
+  for(let i=0; i < closes.length - len - 20; i++){
+    const past = normalize(closes.slice(i, i+len));
+    const score = similarity(current, past);
+
+    if(score > best.score){
+      best.score = score;
+      best.index = i;
+    }
+  }
+
+  return best;
+}
+
+async function loadChart(){
+  stopUpdate();
+
+  const symbol = document.getElementById("symbol").value.trim().toUpperCase();
+  const tf = document.getElementById("tf").value;
+  const limit = Number(document.getElementById("candles").value) || 1000;
+  const len = Number(document.getElementById("pattern").value) || 40;
+
+  if(chart){
+    chart.remove();
+    chart = null;
+  }
+
+  chart = LightweightCharts.createChart(document.getElementById("chart"), {
+    layout:{
+      background:{color:"#050b13"},
+      textColor:"#ffffff"
+    },
+    grid:{
+      vertLines:{color:"#1c2944"},
+      horzLines:{color:"#1c2944"}
+    },
+    width:document.getElementById("chart").clientWidth,
+    height:500,
+    timeScale:{
+      rightOffset:8,
+      barSpacing:8
+    }
+  });
+
+  candleSeries = chart.addCandlestickSeries({
+    upColor:"#16a085",
+    downColor:"#e74c3c",
+    borderUpColor:"#16a085",
+    borderDownColor:"#e74c3c",
+    wickUpColor:"#16a085",
+    wickDownColor:"#e74c3c"
+  });
+
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
+  const res = await fetch(url);
+  const raw = await res.json();
+
+  if(!Array.isArray(raw)){
+    alert("رمز العملة غير صحيح أو البيانات غير متاحة");
+    return;
+  }
+
+  const data = raw.map(k => ({
+    time: Math.floor(k[0]/1000),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4])
+  }));
+
+  candleSeries.setData(data);
+
+  const best = findMemory(data, len);
+  const start = best.index;
+  const end = best.index + len - 1;
+  const after = Math.min(end + 20, data.length - 1);
+
+  const startPrice = data[start].close;
+  const endPrice = data[end].close;
+  const afterPrice = data[after].close;
+  const move = ((afterPrice - endPrice) / endPrice) * 100;
+
+  markers = [
+    {
+      time:data[start].time,
+      position:"belowBar",
+      color:"#f6c744",
+      shape:"arrowUp",
+      text:"بداية الذاكرة"
+    },
+    {
+      time:data[end].time,
+      position:"aboveBar",
+      color:"#f6c744",
+      shape:"arrowDown",
+      text:"نهاية الذاكرة"
+    },
+    {
+      time:data[after].time,
+      position:"aboveBar",
+      color:move >= 0 ? "#36d399" : "#ff5c7a",
+      shape:move >= 0 ? "arrowUp" : "arrowDown",
+      text:"بعد الذاكرة"
+    }
+  ];
+
+  candleSeries.setMarkers(markers);
+
+  const last = data[data.length - 1].close;
+
+  document.getElementById("price").textContent = last.toFixed(2);
+  document.getElementById("sim").textContent = best.score.toFixed(1) + "%";
+  document.getElementById("dir").textContent = move >= 0 ? "صعود" : "هبوط";
+  document.getElementById("move").textContent = (move >= 0 ? "+" : "") + move.toFixed(2) + "%";
+
+  chart.timeScale().fitContent();
+
+  timer = setInterval(loadChart, 60000);
+}
+
+window.addEventListener("resize",()=>{
+  if(chart){
+    chart.applyOptions({
+      width:document.getElementById("chart").clientWidth
+    });
+  }
+});
+
+loadChart();
 </script>
 </body>
 </html>
